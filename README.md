@@ -276,13 +276,18 @@ Both sources feed the same downstream pipeline:
 Requires Python 3.9+.
 
 ```powershell
+# Create a virtual environment named .venv (the conventional name every
+# editor/tool auto-detects) and install dependencies into it
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 Dependencies: [ObsPy](https://docs.obspy.org/) (SDS archive client +
 seismological processing), NumPy, SciPy (spectrogram + WAV I/O), Matplotlib
-(plotting). No extra/optional dependencies for the satellite pipeline --
-just Python's stdlib `urllib` for the HTTP request.
+(plotting), and [openpyxl](https://openpyxl.readthedocs.io/) (reads the local
+MOUNTS Excel export used by the satellite pipeline). The live MOUNTS API path
+only needs Python's stdlib `urllib`.
 
 ## Quick start
 

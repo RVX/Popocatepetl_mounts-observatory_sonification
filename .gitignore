@@ -1,10 +1,8 @@
 __pycache__/
 *.pyc
 
-# local Python virtual environments -- machine-specific, not tracked
+# local Python virtual environment (create with: python -m venv .venv) -- machine-specific, not tracked
 .venv/
-.venv-1/
-venv/
 
 # raw seismic/infrasound archive (unzip the WeTransfer package here) -- large, not tracked
 seed/*
