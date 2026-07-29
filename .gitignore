@@ -12,9 +12,9 @@ seed/*
 datasets/MOUNTS_*.xlsx
 
 # generated outputs -- regenerate locally, don't track
-datasets/mseed/*
-datasets/plot/*
-datasets/sonifications/*
+datasets/ground/mseed/*
+datasets/ground/plot/*
+datasets/ground/sonifications/*
 datasets/maps/*
 datasets/satellite/raw/*
 datasets/satellite/plot/*

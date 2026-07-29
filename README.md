@@ -12,15 +12,11 @@ data into sound, from two independent sources at once:
   and turned into sound via **parameter-mapping sonification** (pitch and timing
   driven directly by each measurement).
 
-This is an adaptation of
-[RVX/DZA_Borehole_Sonification](https://github.com/RVX/DZA_Borehole_Sonification)
-(Victor Mazon, 2026) for a different scientist, network, volcano, and a second,
-entirely new data source (satellite) that DZA01 doesn't have. It keeps the same
-plain, auditable approach: standard [ObsPy](https://docs.obspy.org/) waveform
-processing, a transparent "resample the timebase" audification method for ground
-data, and no proprietary DSP or hidden steps anywhere.
+It keeps a plain, auditable approach throughout: standard
+[ObsPy](https://docs.obspy.org/) waveform processing, a transparent
+"resample the timebase" audification method for ground data, and no
+proprietary DSP or hidden steps anywhere.
 
-**Author:** adapted by [contributor name / org] from Victor Mazon's DZA01
 **Scientific data:** Sebastien Valade (MOUNTS observatory) -- ground data;
 MOUNTS API -- satellite data
 **License:** GNU General Public License v3.0 (see [LICENSE](LICENSE))
@@ -34,13 +30,13 @@ historical export for Popocatepetl (2015-2026, thousands of real measurements) -
 not mockups or synthetic placeholders.
 
 **Where + what**: the `satellite` action now renders one combined figure --
-a real-geography context map (nearby cities with computed distance/bearing,
-compass rose, scale bar, and a "where in Mexico" locator inset, all from real
-public coordinates) on top of the four MOUNTS series below it, so location
-and activity read as a single explanation instead of two disconnected images
-(run `python POPO01.py satellite --play` to also generate and listen to the
-`.wav` files locally -- they aren't committed to the repo, see
-[Output folder layout](#output-folder-layout)):
+the four MOUNTS series stacked on the left, and a real-geography context map
+(nearby cities with computed distance/bearing, compass rose, scale bar, and a
+"where in Mexico" locator inset, all from real public coordinates) on the
+right, so location and activity read as a single explanation instead of two
+disconnected images (run `python POPO01.py satellite --play` to also generate
+and listen to the `.wav` files locally -- they aren't committed to the repo,
+see [Output folder layout](#output-folder-layout)):
 
 ![Popocatepetl location and MOUNTS satellite time series 2015-2026](docs/images/popo_satellite.png)
 
@@ -74,7 +70,7 @@ and activity read as a single explanation instead of two disconnected images
 - [Output folder layout](#output-folder-layout)
 - [Data sources and limitations](#data-sources-and-limitations)
 - [Known limitations / things to be aware of](#known-limitations--things-to-be-aware-of)
-- [What's different from DZA01 (and why)](#whats-different-from-dza01-and-why)
+- [Design notes](#design-notes)
 - [Contributing](#contributing)
 - [Citation](#citation)
 - [License](#license)
@@ -152,7 +148,7 @@ during ongoing eruptive activity -- that's when the infrasound channels
 
 `do_fetch()` uses `obspy.clients.filesystem.sds.Client` to read a time window
 directly from a **local SDS archive** (`--sds-root`, default `seed/`) --
-unlike DZA01, there is no live FDSN server for this station yet, so there's no
+there is no live FDSN server for this station yet, so there's no
 "now minus latency" polling logic. Instead, the only currently-archived day is
 **2026-03-27** (the day of the last explosive activity), and you pick a window
 within it:
@@ -175,9 +171,9 @@ within it:
    supplied -- otherwise data stays in raw digitizer counts (no instrument
    metadata was included in the WeTransfer package).
 
-Saved as MiniSEED (`.mseed`) under `datasets/mseed/`, with a `.json` sidecar
-recording the exact window and filters used (read back automatically by
-`plot`).
+Saved as MiniSEED (`.mseed`) under `datasets/ground/mseed/`, with a `.json`
+sidecar recording the exact window and filters used (read back automatically
+by `plot`).
 
 #### 2. Plot
 
@@ -186,14 +182,14 @@ the vertical/first channel on top (dashed lines at `freqmin`/`freqmax`, solid
 green line at the dominant frequency), and one labeled waveform panel per trace
 below, colored and shaded by channel family, with a shared absolute time axis
 scaled to the recording's actual duration. Saved as `.png` under
-`datasets/plot/`.
+`datasets/ground/plot/`.
 
 #### 3. Sonify
 
 `do_sonify()` normalizes trace data to -1..1 and writes 16-bit PCM `.wav`
 audio. By default it picks the first available trace; `--channel all` sonifies
-every trace into its own `.wav` instead. Speeding up is the same trick as
-DZA01: keep every sample, just multiply the **declared** sample rate by
+every trace into its own `.wav` instead. Speeding up keeps every sample and
+just multiplies the **declared** sample rate by
 `--speed-up` (default 200), a linear time/frequency stretch (not
 pitch-preserving), moving inaudible ground motion / pressure signal up into
 the audible range:
@@ -210,9 +206,11 @@ found).
 
 #### 5. Map
 
-`do_map()` prints the station/volcano coordinates and saves a simple
-Matplotlib map + summit-elevation note to `datasets/maps/`. No waveform data is
-fetched; no `cartopy`/internet tiles are required.
+`do_map()` prints the station/volcano coordinates and saves a real-geography
+context map (nearby cities, distances/bearings, compass rose, scale bar,
+"where in Mexico" locator inset) to `datasets/maps/`. No waveform data is
+fetched; no `cartopy`/internet tiles are required -- see
+[draw_context_map()](#b-satellite-fetch--plot--sonify) below.
 
 ### B. Satellite: fetch / plot / sonify
 
@@ -260,11 +258,11 @@ Both sources feed the same downstream pipeline:
    the API's shape changes.
 2. **Zero-map** `apply_zero_mapping()` -- replaces known "no detection"
    sentinel values with `0` (see [below](#zero-mapping-sentinel-values)).
-3. **Plot** `do_satellite_plot()` -- a real-geography context map
-   (`draw_context_map()`: nearby cities with computed distance/bearing,
-   compass rose, scale bar, "where in Mexico" locator inset) followed by one
-   panel per series, all in a single combined figure saved to
-   `datasets/satellite/plot/popo_satellite.png`.
+3. **Plot** `do_satellite_plot()` -- one panel per series stacked on the
+   left, and a real-geography context map (`draw_context_map()`: nearby
+   cities with computed distance/bearing, compass rose, scale bar, "where in
+   Mexico" locator inset) on the right, all in a single combined figure
+   saved to `datasets/satellite/plot/popo_satellite.png`.
 4. **Sonify** `sonify_timeseries()` -- each `(time, value)` point becomes a
    short pitched grain (150 ms, raised-cosine envelope, no clicks): **pitch**
    is the value log-mapped within that series' own observed min/max onto its
@@ -424,10 +422,9 @@ python POPO01.py satellite --sat-xlsx path/to/MOUNTS_popocatepetl_export.xlsx
 
 ## Understanding `--listen-minutes`
 
-- **Ground:** works like DZA01's -- when fetching, it computes how much raw
-  data to request (`--listen-minutes * --speed-up`); when reusing a saved
-  file, it instead computes `--speed-up` for you from the file's actual
-  length.
+- **Ground:** when fetching, it computes how much raw data to request
+  (`--listen-minutes * --speed-up`); when reusing a saved file, it instead
+  computes `--speed-up` for you from the file's actual length.
 - **Satellite:** simpler, since each series already only has a handful of
   sparse points -- `--listen-minutes` (default 2) just sets the total output
   duration that all the series' points are spread across, in real
@@ -456,18 +453,23 @@ Created automatically next to the script on first run:
 ```
 seed/                              # unzip the WeTransfer SDS archive here
 datasets/
-├── mseed/                         # processed ground waveform data (.mseed) + .json sidecar
-├── plot/                          # ground spectrogram + waveform plots (.png)
-├── sonifications/                 # ground audio (.wav)
+├── ground/
+│   ├── mseed/                     # processed ground waveform data (.mseed) + .json sidecar
+│   ├── plot/                      # ground spectrogram + waveform plots (.png)
+│   └── sonifications/             # ground audio (.wav)
 ├── maps/                          # station/volcano context map (.png)
 └── satellite/
     ├── raw/                       # raw MOUNTS API JSON responses
-    ├── plot/                      # satellite time-series plot (.png)
+    ├── plot/                      # satellite time-series + map plot (.png)
     └── sonifications/             # satellite parameter-mapping audio (.wav)
 docs/images/                       # static copies of real output, committed to
                                     # git for the README preview above -- everything
                                     # under datasets/ is regenerated locally instead
 ```
+
+Ground and satellite outputs are nested under their own subfolder
+(`datasets/ground/*`, `datasets/satellite/*`) precisely so folder names like
+`plot` or `sonifications` never exist twice ambiguously at the same level.
 
 Saved data is not tracked in git (see `.gitignore`) -- only the folder
 structure is, via `.gitkeep` placeholders.
@@ -482,8 +484,7 @@ structure is, via `.gitkeep` placeholders.
   digitizer counts unless a StationXML/dataless is supplied via
   `--inventory`. There is no live FDSN server for this station at the time
   of writing -- an FDSN endpoint may be set up later, at which point the
-  fetch logic would need to switch to `obspy.clients.fdsn.Client` (as DZA01
-  does).
+  fetch logic would need to switch to `obspy.clients.fdsn.Client`.
 - **Satellite:** two interchangeable sources:
   - A local **MOUNTS Excel export** (`datasets/MOUNTS_*.xlsx`), auto-detected
     when present -- the complete historical record (e.g. 2015-2026 for
@@ -516,22 +517,22 @@ structure is, via `.gitkeep` placeholders.
 - CZB's exact station coordinates are a placeholder (public summit location)
   until Sebastien Valade provides precise station metadata.
 
-## What's different from DZA01 (and why)
+## Design notes
 
 - **No live FDSN server.** Ground data comes from a **local SDS archive**
   (`obspy.clients.filesystem.sds.Client`) instead of a live FDSN web service,
   so there's no `--latency`/backoff polling logic -- there's nothing to poll.
-- **One day of data only**, so instead of DZA01's `--hours-back`/`--days-back`,
-  you pick a window with `--start`/`--end`/`--full-day`, defaulting to the
-  known eruption window.
-- **One station, two sensor families** (seismic + infrasound) instead of
-  DZA01's surface/borehole site pairs, each with its own bandpass.
-  `--channels` selects which family to fetch.
+- **One day of data only**, so you pick a window with
+  `--start`/`--end`/`--full-day`, defaulting to the known eruption window,
+  rather than an `--hours-back`/`--days-back` style option.
+- **One station, two sensor families** (seismic + infrasound), each with its
+  own bandpass. `--channels` selects which family to fetch.
   See [Station and volcano](#station-and-volcano).
 - **No instrument response by default** -- no StationXML/dataless was
-  included in the data package, unlike DZA01's always-available inventory.
-- **New: satellite sonification**, an entirely new pipeline and
-  sonification method (parameter-mapping) that DZA01 doesn't have at all,
+  included in the data package, so data stays in raw digitizer counts unless
+  one is supplied via `--inventory`.
+- **Satellite sonification** is an entirely separate pipeline and
+  sonification method (parameter-mapping) from the ground audification,
   since satellite measurements are sparse points rather than a continuous
   waveform.
 
@@ -548,8 +549,7 @@ or extend the sonification approach further.
 If this tool is useful in an academic or creative context, a citation or
 acknowledgment along these lines is appreciated:
 
-> *POPO01 Popocatepetl Sonification Toolkit* [Software], adapted from Victor
-> Mazon's *DZA01 Seismic Sonification Toolkit* (2026).
+> *POPO01 Popocatepetl Sonification Toolkit* [Software] (2026).
 > Ground data: Sebastien Valade, MOUNTS observatory. Satellite data: MOUNTS
 > API (http://mounts-project.com/).
 
@@ -561,6 +561,4 @@ modify, and redistribute this software (including commercially), provided
 derivative works are also released under the GPL-3.0 and you preserve the
 copyright/license notices.
 
-Copyright (C) 2026 Victor Mazon
-This adaptation for Popocatepetl / MOUNTS: Copyright (C) 2026, released under
-the same license.
+Copyright (C) 2026 RVX

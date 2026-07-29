@@ -1,30 +1,30 @@
 """POPO01 -- Popocatepetl seismic/infrasound + satellite sonification toolkit.
 
-Adapted from the DZA01 Borehole Sonification toolkit (Victor Mazon, 2026,
-https://github.com/RVX/DZA_Borehole_Sonification, GPL-3.0) for a different
-scientist, network and location: station MX.CZB on Popocatepetl (Mexico),
-data provided by Sebastien Valade (MOUNTS observatory).
+Sonifies Popocatepetl (Mexico) volcanic activity from two independent data
+sources: station MX.CZB ground seismic/infrasound data (provided by Sebastien
+Valade, MOUNTS observatory) and the MOUNTS satellite API/export.
 
 Two independent data sources, two independent sonification approaches:
 
   A. GROUND (seismic + infrasound), actions: fetch / plot / sonify / play / map
-     Reads a local SDS (SeisComP Data Structure) archive -- NOT a live FDSN
-     server like DZA01 used. Sebastien sent one day of data (2026-03-27,
-     the day of the last explosive activity, ~07:00 UTC) via WeTransfer; an
-     FDSN web service may be set up later. Sonification method is the same
-     "audification" trick as DZA01: keep every sample, just declare a faster
-     playback sample rate so inaudible ground motion / pressure shifts up
-     into the audible range.
+     Reads a local SDS (SeisComP Data Structure) archive -- there is no live
+     FDSN server for this station yet. Sebastien sent one day of data
+     (2026-03-27, the day of the last explosive activity, ~07:00 UTC) via
+     WeTransfer; an FDSN web service may be set up later. Sonification method
+     is "audification": keep every sample, just declare a faster playback
+     sample rate so inaudible ground motion / pressure shifts up into the
+     audible range.
 
   B. SATELLITE (MOUNTS API), action: satellite
      SO2 mass (Sentinel-5P), thermal hot-pixel count (Sentinel-2/MIROVA),
      InSAR deformation std.dev and coherence (Sentinel-1) -- four sparse,
-     irregularly-sampled time series fetched over HTTP as JSON. There is no
-     continuous waveform to "speed up" here, so this uses a different,
-     complementary method: parameter-mapping sonification. Each measurement
-     becomes a short pitched tone (pitch <- value, position in time <-
-     measurement time, compressed into --listen-minutes), the classic
-     "data sonification" approach for irregular scientific time series.
+     irregularly-sampled time series fetched over HTTP as JSON (or read from
+     a local Excel export). There is no continuous waveform to "speed up"
+     here, so this uses a different, complementary method: parameter-mapping
+     sonification. Each measurement becomes a short pitched tone (pitch <-
+     value, position in time <- measurement time, compressed into
+     --listen-minutes), the classic "data sonification" approach for
+     irregular scientific time series.
 
 Station / data notes (from Sebastien Valade, March 2026)
 ----------------------------------------------------------
@@ -40,9 +40,9 @@ Station / data notes (from Sebastien Valade, March 2026)
 Folder layout (created automatically next to this script)
 -----------------------------------------------------------
   seed/                              unzip the WeTransfer SDS archive here
-  datasets/mseed/                    processed ground waveform data (.mseed) + .json sidecar
-  datasets/plot/                     ground spectrogram + waveform plots (.png)
-  datasets/sonifications/            ground audio (.wav)
+  datasets/ground/mseed/             processed ground waveform data (.mseed) + .json sidecar
+  datasets/ground/plot/              ground spectrogram + waveform plots (.png)
+  datasets/ground/sonifications/     ground audio (.wav)
   datasets/maps/                     station location plot (.png)
   datasets/satellite/raw/            raw MOUNTS API responses (.json)
   datasets/satellite/plot/           satellite time-series plots (.png)
@@ -145,12 +145,16 @@ GRID_COLOR = "0.3"
 # ---------------------------------------------------------------------------
 # Folder layout
 # ---------------------------------------------------------------------------
+# Ground and satellite outputs are nested under their own subfolder
+# (datasets/ground/*, datasets/satellite/*) so e.g. "sonifications" or "plot"
+# never exists twice as an ambiguous top-level folder name.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SDS_ROOT = os.path.join(BASE_DIR, "seed")
 DATASETS_DIR = os.path.join(BASE_DIR, "datasets")
-PLOT_DIR = os.path.join(DATASETS_DIR, "plot")
-MSEED_DIR = os.path.join(DATASETS_DIR, "mseed")
-SONIFY_DIR = os.path.join(DATASETS_DIR, "sonifications")
+GROUND_DIR = os.path.join(DATASETS_DIR, "ground")
+PLOT_DIR = os.path.join(GROUND_DIR, "plot")
+MSEED_DIR = os.path.join(GROUND_DIR, "mseed")
+SONIFY_DIR = os.path.join(GROUND_DIR, "sonifications")
 MAP_DIR = os.path.join(DATASETS_DIR, "maps")
 SAT_DIR = os.path.join(DATASETS_DIR, "satellite")
 SAT_RAW_DIR = os.path.join(SAT_DIR, "raw")
@@ -159,6 +163,7 @@ SAT_SONIFY_DIR = os.path.join(SAT_DIR, "sonifications")
 
 for _dir in (PLOT_DIR, MSEED_DIR, SONIFY_DIR, MAP_DIR, SAT_RAW_DIR, SAT_PLOT_DIR, SAT_SONIFY_DIR):
     os.makedirs(_dir, exist_ok=True)
+
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +285,7 @@ def _parse_hhmm(day_start, hhmm):
 
 
 # ---------------------------------------------------------------------------
-# Fetch (from local SDS archive -- no network access, unlike DZA01's live FDSN)
+# Fetch (from a local SDS archive -- no live FDSN server for this station)
 # ---------------------------------------------------------------------------
 def build_sds_client(sds_root):
     if not os.path.isdir(sds_root):
@@ -758,7 +763,7 @@ def do_plot(mseed_path, st=None):
 
 
 # ---------------------------------------------------------------------------
-# Sonify (ground data) -- identical "audification" method to DZA01
+# Sonify (ground data) -- "audification": resample the timebase to speed up playback
 # ---------------------------------------------------------------------------
 def pick_trace(st, channel_filter=None):
     if channel_filter:
@@ -1130,18 +1135,15 @@ def do_satellite_fetch(sat_types, target_id, time_filter, debug=False):
 
 
 def do_satellite_plot(series, target_id):
-    """Combined overview figure: a real-geography context map on top (so the
-    time series below aren't floating without any sense of place), followed
-    by one panel per satellite series."""
+    """Combined overview figure: the MOUNTS time series stacked on the left,
+    a real-geography context map on the right, so location and activity read
+    as one explanation instead of two disconnected images."""
     n = len(series)
-    fig = plt.figure(figsize=(11, 6.5 + 2.1 * n), facecolor=BG_COLOR)
-    gs = fig.add_gridspec(n + 1, 1, height_ratios=[2.4] + [1.0] * n, hspace=0.55)
-
-    map_ax = fig.add_subplot(gs[0])
-    draw_context_map(map_ax, compact=True)
+    fig = plt.figure(figsize=(14.5, max(7.0, 1.9 * n + 1.2)), facecolor=BG_COLOR)
+    gs = fig.add_gridspec(n, 2, width_ratios=[2.1, 1.5], wspace=0.25, hspace=0.55)
 
     for i, sat_type in enumerate(series):
-        ax = fig.add_subplot(gs[i + 1])
+        ax = fig.add_subplot(gs[i, 0])
         times, values = series[sat_type]
         _, name, color, _ = SAT_TYPE_INFO[sat_type]
         dt = [datetime.utcfromtimestamp(t) for t in times]
@@ -1149,11 +1151,15 @@ def do_satellite_plot(series, target_id):
         ax.set_title(name, color="white", fontsize=10, loc="left")
         style_axes(ax)
         ax.grid(True, color=GRID_COLOR, linewidth=0.4, alpha=0.5)
-    fig.suptitle(f"{VOLCANO_NAME} -- location + MOUNTS satellite time series (target_id {target_id})",
+
+    map_ax = fig.add_subplot(gs[:, 1])
+    draw_context_map(map_ax, compact=True)
+
+    fig.suptitle(f"{VOLCANO_NAME} -- MOUNTS satellite time series + location (target_id {target_id})",
                  color="white", fontsize=12)
     # Not tight_layout(): inset_axes (the Mexico locator) isn't compatible with it
-    # and produces a large blank gap above the map -- position panels manually instead.
-    fig.subplots_adjust(top=0.95, bottom=0.03, left=0.08, right=0.97, hspace=0.55)
+    # and produces a large blank gap -- position panels manually instead.
+    fig.subplots_adjust(top=0.93, bottom=0.06, left=0.06, right=0.98, wspace=0.25, hspace=0.55)
     plot_path = os.path.join(SAT_PLOT_DIR, "popo_satellite.png")
     fig.savefig(plot_path, dpi=150, facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -1172,13 +1178,6 @@ SAT_FREQ_RANGE_HZ = {
 }
 
 
-def _synthesize_grain(freq_hz, duration_s, sample_rate, amplitude=1.0):
-    n = max(1, int(duration_s * sample_rate))
-    t = np.arange(n) / sample_rate
-    envelope = np.sin(np.pi * t / duration_s) ** 2  # smooth in/out, no clicks
-    return amplitude * envelope * np.sin(2 * np.pi * freq_hz * t)
-
-
 def sonify_timeseries(sat_type, times, values, listen_minutes, sample_rate=44100, grain_s=0.15):
     """Parameter-mapping sonification: each (time, value) point becomes a
     short pitched grain. Pitch <- value (log-mapped within this series'
@@ -1194,17 +1193,25 @@ def sonify_timeseries(sat_type, times, values, listen_minutes, sample_rate=44100
     v_span = v_max - v_min
 
     total_s = listen_minutes * 60.0
-    n_samples = int(total_s * sample_rate) + int(grain_s * sample_rate) + 1
+    grain_n = max(1, int(grain_s * sample_rate))
+    n_samples = int(total_s * sample_rate) + grain_n + 1
     buffer = np.zeros(n_samples, dtype=np.float64)
 
-    for t, v in zip(t_arr, v_arr):
-        norm_v = 0.5 if v_span == 0 else (v - v_min) / v_span
-        norm_v = min(max(norm_v, 0.0), 1.0)
-        freq = freq_lo * (freq_hi / freq_lo) ** norm_v
-        pos_s = (t - t_min) / t_span * total_s
-        start_sample = int(pos_s * sample_rate)
-        grain = _synthesize_grain(freq, grain_s, sample_rate, amplitude=0.6)
-        end_sample = start_sample + len(grain)
+    # Grain time base + envelope are identical for every point (only the
+    # carrier frequency changes) -- compute them once instead of rebuilding
+    # an arange()/sin() envelope on every one of the (up to several thousand) points.
+    t_grain = np.arange(grain_n) / sample_rate
+    envelope = 0.6 * np.sin(np.pi * t_grain / grain_s) ** 2  # smooth in/out, no clicks
+
+    # Vectorize the per-point pitch/position mapping across the whole series
+    # instead of doing it one Python scalar at a time inside the loop.
+    norm_v = np.full_like(v_arr, 0.5) if v_span == 0 else np.clip((v_arr - v_min) / v_span, 0.0, 1.0)
+    freqs = freq_lo * (freq_hi / freq_lo) ** norm_v
+    start_samples = ((t_arr - t_min) / t_span * total_s * sample_rate).astype(np.int64)
+
+    for freq, start_sample in zip(freqs, start_samples):
+        grain = envelope * np.sin(2 * np.pi * freq * t_grain)
+        end_sample = start_sample + grain_n
         if end_sample > len(buffer):
             grain = grain[: len(buffer) - start_sample]
             end_sample = len(buffer)
