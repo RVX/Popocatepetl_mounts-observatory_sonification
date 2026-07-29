@@ -420,39 +420,155 @@ def do_fetch(args):
 # ---------------------------------------------------------------------------
 # Map (single-station location, no country outline asset for Mexico yet)
 # ---------------------------------------------------------------------------
-def do_map():
-    fig, ax = plt.subplots(figsize=(7, 6.5), facecolor=BG_COLOR)
+# Real, well-known reference points used purely to give the map geographic
+# context (city labels + real distances/bearings) -- not an administrative
+# boundary survey. Coordinates are public-knowledge city centers.
+NEARBY_CITIES = [
+    ("Mexico City", 19.4326, -99.1332),
+    ("Puebla",      19.0414, -98.2063),
+    ("Cholula",     19.0638, -98.3020),
+    ("Cuernavaca",  18.9242, -99.2216),
+    ("Amecameca",   19.1197, -98.7756),
+    ("Atlixco",     18.9096, -98.4347),
+]
+
+# Coarser set spanning the whole country, for the "where in Mexico" locator inset.
+MEXICO_LOCATOR_CITIES = [
+    ("Tijuana",     32.5149, -117.0382),
+    ("Monterrey",   25.6866, -100.3161),
+    ("Guadalajara", 20.6597, -103.3496),
+    ("Merida",      20.9674, -89.5926),
+    ("Veracruz",    19.1738, -96.1342),
+    ("Oaxaca",      17.0732, -96.7266),
+]
+
+COMPASS_DIRS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km between two lat/lon points."""
+    r_km = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r_km * math.asin(math.sqrt(a))
+
+
+def bearing_compass(lat1, lon1, lat2, lon2):
+    """16-point compass direction from point 1 towards point 2."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlambda = math.radians(lon2 - lon1)
+    x = math.sin(dlambda) * math.cos(p2)
+    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dlambda)
+    brng = (math.degrees(math.atan2(x, y)) + 360) % 360
+    return COMPASS_DIRS[int((brng + 11.25) // 22.5) % 16]
+
+
+def draw_compass_rose(ax, x=0.92, y=0.90, size=0.05):
+    ax.annotate(
+        "N", xy=(x, y), xytext=(x, y - size), xycoords="axes fraction",
+        textcoords="axes fraction", color="white", fontsize=9, weight="bold",
+        ha="center", va="center",
+        arrowprops=dict(arrowstyle="-|>", color="white", lw=1.4),
+    )
+
+
+def draw_scale_bar(ax, lat_for_scale, km=20.0, x=0.06, y=0.06):
+    """Scale bar in data (lon/lat) coordinates, sized so its width equals
+    `km` kilometers at the map's latitude."""
+    km_per_deg_lon = haversine_km(lat_for_scale, 0.0, lat_for_scale, 1.0)
+    width_deg = km / km_per_deg_lon
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    bar_x0 = x0 + (x1 - x0) * x
+    bar_y = y0 + (y1 - y0) * y
+    ax.plot([bar_x0, bar_x0 + width_deg], [bar_y, bar_y], color="white", lw=2.5,
+            solid_capstyle="butt", zorder=4)
+    ax.text(bar_x0 + width_deg / 2, bar_y, f"{km:.0f} km", color="white", fontsize=7.5,
+            ha="center", va="bottom", zorder=4)
+
+
+def draw_context_map(ax, compact=False):
+    """Local-scale map centered on the volcano: real nearby cities with
+    computed distance/bearing, compass rose, scale bar. Reused by both the
+    standalone `map` action and the combined satellite overview figure."""
     ax.set_facecolor(BG_COLOR)
+
+    for name, lat, lon in NEARBY_CITIES:
+        dist_km = haversine_km(VOLCANO_LAT, VOLCANO_LON, lat, lon)
+        direction = bearing_compass(VOLCANO_LAT, VOLCANO_LON, lat, lon)
+        ax.scatter([lon], [lat], s=40, marker="o", color="#ffd54f",
+                   edgecolor="#1c1f26", linewidth=0.6, zorder=3)
+        ax.annotate(
+            f"{name}\n{dist_km:.0f} km {direction}",
+            xy=(lon, lat), xytext=(6, 5), textcoords="offset points",
+            color="#ffe082", fontsize=6.5 if compact else 7.5, family="monospace", zorder=3,
+        )
+
     ax.scatter([VOLCANO_LON], [VOLCANO_LAT], s=260, marker="^", color="#ff5252",
-               edgecolor="white", linewidth=1.5, zorder=3)
+               edgecolor="white", linewidth=1.5, zorder=5)
     ax.annotate(
         f"{VOLCANO_NAME}\nsummit ~{VOLCANO_ELEV_M:.0f} m\n(MOUNTS id {MOUNTS_TARGET_ID})",
         xy=(VOLCANO_LON, VOLCANO_LAT), xytext=(12, 10), textcoords="offset points",
-        color="white", fontsize=8, family="monospace",
+        color="white", fontsize=8, family="monospace", zorder=5,
         bbox=dict(boxstyle="round", facecolor="#1c1f26", edgecolor=GRID_COLOR, alpha=0.9),
     )
-    ax.text(
-        0.02, 0.02,
-        f"Station {NETWORK}.{STATION}: exact coordinates not yet in the data\n"
-        f"package (seismic HNZ/HNN/HNE @ loc 00, infrasound HDF @ loc 01-04).\n"
-        f"Ask Sebastien Valade for a StationXML/dataless to plot the real\n"
-        f"station location and distance to the crater.",
-        transform=ax.transAxes, color=FG_COLOR, fontsize=7.5, family="monospace",
-        va="bottom", ha="left",
-        bbox=dict(boxstyle="round", facecolor="#1c1f26", edgecolor=GRID_COLOR, alpha=0.85),
-    )
+    if not compact:
+        ax.text(
+            0.02, 0.02,
+            f"Station {NETWORK}.{STATION}: exact coordinates not yet in the data\n"
+            f"package (seismic HNZ/HNN/HNE @ loc 00, infrasound HDF @ loc 01-04).\n"
+            f"Ask Sebastien Valade for a StationXML/dataless to plot the real\n"
+            f"station location and distance to the crater. Nearby city distances/\n"
+            f"bearings above are computed (haversine) from public city coordinates.",
+            transform=ax.transAxes, color=FG_COLOR, fontsize=7, family="monospace",
+            va="bottom", ha="left",
+            bbox=dict(boxstyle="round", facecolor="#1c1f26", edgecolor=GRID_COLOR, alpha=0.85),
+        )
+
     pad = 0.3
     ax.set_xlim(VOLCANO_LON - pad, VOLCANO_LON + pad)
     ax.set_ylim(VOLCANO_LAT - pad, VOLCANO_LAT + pad)
     ax.set_aspect(1.0 / max(math.cos(math.radians(VOLCANO_LAT)), 1e-6))
     ax.set_xlabel("Longitude (\u00b0E)", color=FG_COLOR, fontsize=8)
     ax.set_ylabel("Latitude (\u00b0N)", color=FG_COLOR, fontsize=8)
-    ax.set_title(f"{VOLCANO_NAME} -- {NETWORK}.{STATION} context map", color="white", fontsize=11)
+    title = f"{VOLCANO_NAME} -- {NETWORK}.{STATION} context map"
+    ax.set_title(title if not compact else title + " (real nearby cities, distances in km)",
+                 color="white", fontsize=11 if not compact else 10)
     ax.grid(True, color=GRID_COLOR, linewidth=0.4, alpha=0.5)
     ax.tick_params(colors=FG_COLOR, labelsize=8)
     for spine in ax.spines.values():
         spine.set_color(GRID_COLOR)
 
+    draw_compass_rose(ax)
+    scale_x = 0.06 if compact else 0.72
+    draw_scale_bar(ax, VOLCANO_LAT, km=20.0, x=scale_x)
+
+    # "Where in Mexico" locator inset -- real coordinates of major cities
+    # spanning the country, plotted to true relative scale, with the volcano
+    # marked, so the local map above isn't floating in an unlabeled void.
+    inset = ax.inset_axes([0.60, 0.60, 0.38, 0.38] if not compact else [0.66, 0.62, 0.32, 0.34])
+    inset.set_facecolor("#1c1f26")
+    for name, lat, lon in MEXICO_LOCATOR_CITIES:
+        inset.scatter([lon], [lat], s=10, color="#80cbc4", zorder=2)
+    inset.scatter([VOLCANO_LON], [VOLCANO_LAT], s=70, marker="*", color="#ff5252",
+                  edgecolor="white", linewidth=0.5, zorder=3)
+    inset.set_xlim(-118, -86)
+    inset.set_ylim(14, 33)
+    inset.set_aspect(1.0 / max(math.cos(math.radians(23)), 1e-6))
+    inset.set_title("Mexico", color=FG_COLOR, fontsize=6.5, pad=2)
+    inset.set_xticks([])
+    inset.set_yticks([])
+    for spine in inset.spines.values():
+        spine.set_color(GRID_COLOR)
+        spine.set_linewidth(0.5)
+
+
+def do_map():
+    fig, ax = plt.subplots(figsize=(7.5, 7), facecolor=BG_COLOR)
+    draw_context_map(ax)
     map_path = os.path.join(MAP_DIR, "station_map.png")
     fig.tight_layout()
     fig.savefig(map_path, dpi=150, facecolor=fig.get_facecolor())
@@ -1014,11 +1130,18 @@ def do_satellite_fetch(sat_types, target_id, time_filter, debug=False):
 
 
 def do_satellite_plot(series, target_id):
+    """Combined overview figure: a real-geography context map on top (so the
+    time series below aren't floating without any sense of place), followed
+    by one panel per satellite series."""
     n = len(series)
-    fig, axes = plt.subplots(n, 1, figsize=(11, max(5, 2.2 * n)), facecolor=BG_COLOR, sharex=False)
-    if n == 1:
-        axes = [axes]
-    for ax, sat_type in zip(axes, series):
+    fig = plt.figure(figsize=(11, 6.5 + 2.1 * n), facecolor=BG_COLOR)
+    gs = fig.add_gridspec(n + 1, 1, height_ratios=[2.4] + [1.0] * n, hspace=0.55)
+
+    map_ax = fig.add_subplot(gs[0])
+    draw_context_map(map_ax, compact=True)
+
+    for i, sat_type in enumerate(series):
+        ax = fig.add_subplot(gs[i + 1])
         times, values = series[sat_type]
         _, name, color, _ = SAT_TYPE_INFO[sat_type]
         dt = [datetime.utcfromtimestamp(t) for t in times]
@@ -1026,9 +1149,11 @@ def do_satellite_plot(series, target_id):
         ax.set_title(name, color="white", fontsize=10, loc="left")
         style_axes(ax)
         ax.grid(True, color=GRID_COLOR, linewidth=0.4, alpha=0.5)
-    fig.suptitle(f"{VOLCANO_NAME} -- MOUNTS satellite time series (target_id {target_id})",
-                 color="white", fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.suptitle(f"{VOLCANO_NAME} -- location + MOUNTS satellite time series (target_id {target_id})",
+                 color="white", fontsize=12)
+    # Not tight_layout(): inset_axes (the Mexico locator) isn't compatible with it
+    # and produces a large blank gap above the map -- position panels manually instead.
+    fig.subplots_adjust(top=0.95, bottom=0.03, left=0.08, right=0.97, hspace=0.55)
     plot_path = os.path.join(SAT_PLOT_DIR, "popo_satellite.png")
     fig.savefig(plot_path, dpi=150, facecolor=fig.get_facecolor())
     plt.close(fig)
