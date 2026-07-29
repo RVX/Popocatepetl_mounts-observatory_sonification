@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+
+# local Python virtual environments -- machine-specific, not tracked
+.venv/
+.venv-1/
+venv/
+
+# raw seismic/infrasound archive (unzip the WeTransfer package here) -- large, not tracked
+seed/*
+!seed/.gitkeep
+
+# MOUNTS Excel export(s) -- provided scientific data, not ours to redistribute
+datasets/MOUNTS_*.xlsx
+
+# generated outputs -- regenerate locally, don't track
+datasets/mseed/*
+datasets/plot/*
+datasets/sonifications/*
+datasets/maps/*
+datasets/satellite/raw/*
+datasets/satellite/plot/*
+datasets/satellite/sonifications/*
+!datasets/**/.gitkeep
