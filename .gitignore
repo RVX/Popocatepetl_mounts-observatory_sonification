@@ -19,4 +19,5 @@ datasets/maps/*
 datasets/satellite/raw/*
 datasets/satellite/plot/*
 datasets/satellite/sonifications/*
+datasets/satellite/envelopes/*
 !datasets/**/.gitkeep

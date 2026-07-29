@@ -47,6 +47,10 @@ Folder layout (created automatically next to this script)
   datasets/satellite/raw/            raw MOUNTS API responses (.json)
   datasets/satellite/plot/           satellite time-series plots (.png)
   datasets/satellite/sonifications/  satellite parameter-mapping audio (.wav)
+  datasets/satellite/envelopes/      per-series 0..1 control-curve CSVs, same
+                                      timeline as the .wav -- for a REAPER
+                                      envelope or a GPIO LED brightness script
+                                      (see reaper/ and gpio/)
 
 Examples
 --------
@@ -63,6 +67,7 @@ Examples
 import os
 import sys
 import glob
+import csv
 import json
 import math
 import colorsys
@@ -160,8 +165,9 @@ SAT_DIR = os.path.join(DATASETS_DIR, "satellite")
 SAT_RAW_DIR = os.path.join(SAT_DIR, "raw")
 SAT_PLOT_DIR = os.path.join(SAT_DIR, "plot")
 SAT_SONIFY_DIR = os.path.join(SAT_DIR, "sonifications")
+SAT_ENVELOPE_DIR = os.path.join(SAT_DIR, "envelopes")
 
-for _dir in (PLOT_DIR, MSEED_DIR, SONIFY_DIR, MAP_DIR, SAT_RAW_DIR, SAT_PLOT_DIR, SAT_SONIFY_DIR):
+for _dir in (PLOT_DIR, MSEED_DIR, SONIFY_DIR, MAP_DIR, SAT_RAW_DIR, SAT_PLOT_DIR, SAT_SONIFY_DIR, SAT_ENVELOPE_DIR):
     os.makedirs(_dir, exist_ok=True)
 
 
@@ -1229,12 +1235,58 @@ def sonify_timeseries(sat_type, times, values, listen_minutes, sample_rate=44100
     return wav_path, audio, sample_rate
 
 
+def export_envelope_csv(sat_type, times, values, listen_minutes, fps=30):
+    """Write a uniformly-resampled 0..1 control curve (CSV: time_s, value_norm,
+    value_raw) for this series, on the exact same compressed timeline used by
+    sonify_timeseries() -- so a REAPER volume/FX envelope or a GPIO LED
+    brightness script driven by this file stays in sync with the .wav.
+
+    value_norm is linearly interpolated between the real (sparse, irregular)
+    measurements, so it's a smooth continuous curve rather than the discrete
+    pitched grains used for audio -- suitable for driving a fader or a PWM
+    LED at a fixed frame rate (default 30 fps)."""
+    t_arr = np.asarray(times, dtype=np.float64)
+    v_arr = np.asarray(values, dtype=np.float64)
+
+    order = np.argsort(t_arr)
+    t_arr = t_arr[order]
+    v_arr = v_arr[order]
+
+    t_min, t_max = t_arr.min(), t_arr.max()
+    t_span = max(t_max - t_min, 1.0)
+    v_min, v_max = v_arr.min(), v_arr.max()
+    v_span = v_max - v_min
+
+    total_s = listen_minutes * 60.0
+    pos_s = (t_arr - t_min) / t_span * total_s
+    norm_v = np.full_like(v_arr, 0.5) if v_span == 0 else np.clip((v_arr - v_min) / v_span, 0.0, 1.0)
+
+    n_frames = max(2, int(total_s * fps) + 1)
+    grid_s = np.linspace(0.0, total_s, n_frames)
+    # np.interp holds the nearest endpoint's value outside [pos_s[0], pos_s[-1]],
+    # so the curve never extrapolates wildly before the first / after the last point.
+    grid_norm = np.interp(grid_s, pos_s, norm_v)
+    grid_raw = np.interp(grid_s, pos_s, v_arr)
+
+    csv_path = os.path.join(SAT_ENVELOPE_DIR, f"popo_{sat_type}_envelope.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["time_s", "value_norm", "value_raw"])
+        for s, n, r in zip(grid_s, grid_norm, grid_raw):
+            writer.writerow([f"{s:.3f}", f"{n:.4f}", f"{r:.6g}"])
+    print(f"[satellite] Saved control-curve envelope to {csv_path} "
+          f"({n_frames} points @ {fps} fps, {total_s:.0f}s)")
+    return csv_path
+
+
 def do_satellite_sonify(series, listen_minutes, sample_rate=44100):
     wav_paths = {}
+    csv_paths = {}
     mix = None
     for sat_type, (times, values) in series.items():
         wav_path, audio, sr = sonify_timeseries(sat_type, times, values, listen_minutes, sample_rate)
         wav_paths[sat_type] = wav_path
+        csv_paths[sat_type] = export_envelope_csv(sat_type, times, values, listen_minutes)
         audio_f = audio.astype(np.float64)
         if mix is None:
             mix = audio_f.copy()
@@ -1252,7 +1304,7 @@ def do_satellite_sonify(series, listen_minutes, sample_rate=44100):
         wavfile.write(mix_path, sample_rate, mix.astype(np.int16))
         print(f"[satellite] Saved combined mix to {mix_path}")
         wav_paths["mix"] = mix_path
-    return wav_paths
+    return wav_paths, csv_paths
 
 
 def do_satellite(args):
@@ -1278,7 +1330,7 @@ def do_satellite(args):
         series = do_satellite_fetch(sat_types, args.target_id, time_filter, debug=args.sat_debug)
 
     do_satellite_plot(series, args.target_id)
-    wav_paths = do_satellite_sonify(series, args.listen_minutes or 2.0)
+    wav_paths, _csv_paths = do_satellite_sonify(series, args.listen_minutes or 2.0)
     if args.play:
         for p in wav_paths.values():
             do_play(p)

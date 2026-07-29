@@ -68,6 +68,7 @@ see [Output folder layout](#output-folder-layout)):
 - [Understanding `--listen-minutes`](#understanding---listen-minutes)
 - [Zero-mapping sentinel values](#zero-mapping-sentinel-values)
 - [Output folder layout](#output-folder-layout)
+- [Driving a REAPER volume envelope and a GPIO LED from the satellite data](#driving-a-reaper-volume-envelope-and-a-gpio-led-from-the-satellite-data)
 - [Data sources and limitations](#data-sources-and-limitations)
 - [Known limitations / things to be aware of](#known-limitations--things-to-be-aware-of)
 - [Design notes](#design-notes)
@@ -461,10 +462,13 @@ datasets/
 └── satellite/
     ├── raw/                       # raw MOUNTS API JSON responses
     ├── plot/                      # satellite time-series + map plot (.png)
-    └── sonifications/             # satellite parameter-mapping audio (.wav)
+    ├── sonifications/             # satellite parameter-mapping audio (.wav)
+    └── envelopes/                 # per-series 0..1 control-curve CSVs (REAPER / GPIO, see below)
 docs/images/                       # static copies of real output, committed to
                                     # git for the README preview above -- everything
                                     # under datasets/ is regenerated locally instead
+reaper/                            # ReaScript to import an envelope CSV as a REAPER volume envelope
+gpio/                               # Raspberry Pi script to drive an LED's brightness from an envelope CSV
 ```
 
 Ground and satellite outputs are nested under their own subfolder
@@ -473,6 +477,46 @@ Ground and satellite outputs are nested under their own subfolder
 
 Saved data is not tracked in git (see `.gitignore`) -- only the folder
 structure is, via `.gitkeep` placeholders.
+
+## Driving a REAPER volume envelope and a GPIO LED from the satellite data
+
+Every `satellite sonify` run also writes a **control-curve CSV** per series to
+`datasets/satellite/envelopes/popo_<type>_envelope.csv`
+(`export_envelope_csv()`): columns `time_s, value_norm, value_raw`, uniformly
+resampled at 30 fps across the exact same compressed `--listen-minutes`
+timeline used for that series' `.wav`. `value_norm` is the same 0..1 mapping
+sonification already uses for pitch, just interpolated into a smooth
+continuous curve instead of discrete grains -- so it's a ready-made fader /
+brightness curve, already time-aligned with the audio.
+
+**REAPER volume envelope** -- [`reaper/import_satellite_envelope.lua`](reaper/import_satellite_envelope.lua):
+1. Drop the `.wav` (e.g. `popo_so2.wav` or the combined `popo_satellite_mix.wav`)
+   onto a track, and make sure that track's **Volume** envelope is visible
+   (right-click the fader / the arrow under the track name -> `Volume`).
+2. Select the track, then run the script (Actions List -> Load ReaScript...).
+3. Pick the matching CSV -- it inserts one envelope point per row (linear
+   segments), mapped onto a tunable gain range (`MIN_GAIN`/`MAX_GAIN` at the
+   top of the script, 1.0 = unity/0 dB).
+
+Playing the track from the start now fades its volume up and down exactly in
+step with the real satellite measurements.
+
+**GPIO LED brightness** -- [`gpio/play_satellite_envelope.py`](gpio/play_satellite_envelope.py)
+(Raspberry Pi, `gpiozero`/`PWMLED`):
+```bash
+python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 18
+```
+Reads the same CSV and sets `PWMLED.value` frame-by-frame on a wall-clock
+timer, with a brightness floor (`--min-brightness`, default 10%) so the LED
+never goes fully dark between measurements. Start it at the same moment as
+the matching REAPER track (or the raw `.wav` playback) to keep sound and
+light synchronized; `--loop` repeats the curve indefinitely for an
+installation left running unattended.
+
+Because both the REAPER envelope and the GPIO brightness are driven from the
+same CSV (which shares its timeline with the audio), all three -- sound,
+fader automation, and physical light -- stay in sync without any additional
+clock/timecode sync between REAPER and the Pi.
 
 ## Data sources and limitations
 
