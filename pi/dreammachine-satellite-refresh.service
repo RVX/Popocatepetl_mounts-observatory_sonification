@@ -8,3 +8,7 @@ Type=oneshot
 User=sjc
 WorkingDirectory=/home/sjc/dreammachine/satellite
 ExecStart=/home/sjc/dreammachine/pi/refresh_satellite.sh
+# refresh_satellite.sh intentionally launches a detached REAPER process that
+# must keep running after this oneshot unit finishes -- KillMode=none stops
+# systemd from tearing it down along with the rest of this unit's cgroup.
+KillMode=none
