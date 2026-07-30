@@ -1,0 +1,10 @@
+[Unit]
+Description=Fetch fresh Popocatepetl satellite data and refresh REAPER envelopes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sjc
+WorkingDirectory=/home/sjc/dreammachine/satellite
+ExecStart=/home/sjc/dreammachine/pi/refresh_satellite.sh
