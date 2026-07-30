@@ -86,8 +86,23 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from scipy.signal import spectrogram
 from scipy.io import wavfile
-from obspy import UTCDateTime, read
-from obspy.clients.filesystem.sds import Client as SDSClient
+
+# obspy is only needed for the ground (seismic/infrasound) commands -- kept
+# optional so `satellite` can run on lighter deployments (e.g. the
+# Raspberry Pi's hourly refresh job) without installing it.
+try:
+    from obspy import UTCDateTime, read
+    from obspy.clients.filesystem.sds import Client as SDSClient
+except ImportError:
+    UTCDateTime = read = SDSClient = None
+
+
+def _require_obspy():
+    if UTCDateTime is None:
+        raise SystemExit(
+            "obspy is required for ground-data commands (pip install obspy). "
+            "Not needed for the `satellite` command."
+        )
 
 # ---------------------------------------------------------------------------
 # Station / network configuration
@@ -250,6 +265,7 @@ def units_for_trace(tr, response_removed):
 def resolve_window(args):
     """Turn --date/--start/--end/--around-eruption/--full-day into a concrete
     (starttime, endtime) UTCDateTime pair."""
+    _require_obspy()
     date_str = args.date or DEFAULT_DATE
     try:
         year, month, day = (int(p) for p in date_str.split("-"))
@@ -294,6 +310,7 @@ def _parse_hhmm(day_start, hhmm):
 # Fetch (from a local SDS archive -- no live FDSN server for this station)
 # ---------------------------------------------------------------------------
 def build_sds_client(sds_root):
+    _require_obspy()
     if not os.path.isdir(sds_root):
         raise SystemExit(
             f"SDS root not found: {sds_root}\n"
@@ -345,6 +362,7 @@ def describe_stream(st, prefix="info"):
 
 
 def load_stream(mseed_path):
+    _require_obspy()
     if not os.path.exists(mseed_path):
         raise SystemExit(f"File not found: {mseed_path}")
     try:
