@@ -53,9 +53,29 @@ if not env then
   return
 end
 
-local script_path = ({reaper.get_action_context()})[2]
-local script_dir = script_path:match("(.*[/\\])")
-local default_dir = (script_dir or "") .. "..\\datasets\\satellite\\envelopes\\"
+local function has_envelope_csv(dir)
+  return reaper.file_exists(dir .. "popo_so2_envelope.csv")
+      or reaper.file_exists(dir .. "popo_mirova_envelope.csv")
+      or reaper.file_exists(dir .. "popo_disp_envelope.csv")
+      or reaper.file_exists(dir .. "popo_coh_envelope.csv")
+end
+
+-- Try the deployed layout first (CSVs next to the REAPER project), then the
+-- dev repo's relative layout (script_dir/../datasets/satellite/envelopes/).
+-- Always forward slashes -- REAPER accepts them on Windows too, and
+-- backslashes are not a path separator on Linux/macOS.
+local default_dir = ""
+local proj_dir = reaper.GetProjectPath("")
+if proj_dir ~= "" and has_envelope_csv(proj_dir .. "/satellite_envelopes/") then
+  default_dir = proj_dir .. "/satellite_envelopes/"
+else
+  local script_path = ({reaper.get_action_context()})[2]
+  local script_dir = script_path:match("(.*[/\\])")
+  local repo_dir = (script_dir or "") .. "../datasets/satellite/envelopes/"
+  if has_envelope_csv(repo_dir) then
+    default_dir = repo_dir
+  end
+end
 
 local ok, csv_path = reaper.GetUserFileNameForRead(default_dir, "Select a popo_<type>_envelope.csv file", "*.csv")
 if not ok then return end
