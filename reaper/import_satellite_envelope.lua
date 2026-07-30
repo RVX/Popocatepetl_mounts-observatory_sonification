@@ -64,11 +64,17 @@ end
 -- dev repo's relative layout (script_dir/../datasets/satellite/envelopes/).
 -- Always forward slashes -- REAPER accepts them on Windows too, and
 -- backslashes are not a path separator on Linux/macOS.
+-- Wrapped in pcall: a failed/renamed API here must never abort the script
+-- silently -- worst case we just fall back to an empty default_dir.
 local default_dir = ""
-local proj_dir = reaper.GetProjectPath("")
-if proj_dir ~= "" and has_envelope_csv(proj_dir .. "/satellite_envelopes/") then
-  default_dir = proj_dir .. "/satellite_envelopes/"
-else
+local proj_ok, _, proj_fn = pcall(reaper.EnumProjects, -1, "")
+if proj_ok and proj_fn and proj_fn ~= "" then
+  local proj_dir = proj_fn:match("(.*[/\\])")
+  if proj_dir and has_envelope_csv(proj_dir .. "satellite_envelopes/") then
+    default_dir = proj_dir .. "satellite_envelopes/"
+  end
+end
+if default_dir == "" then
   local script_path = ({reaper.get_action_context()})[2]
   local script_dir = script_path:match("(.*[/\\])")
   local repo_dir = (script_dir or "") .. "../datasets/satellite/envelopes/"
