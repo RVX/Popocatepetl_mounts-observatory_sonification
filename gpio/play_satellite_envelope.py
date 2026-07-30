@@ -16,8 +16,13 @@ gpiozero/lgpio hardware bindings (see /memories/correr-venice-pis.md for the
 full gpiozero/lgpio setup notes on Debian Trixie).
 
 Usage:
-    python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 18
-    python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 18 27 --loop
+    python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 17
+    python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 17 27 --loop
+
+Pick --pin from your board's safe LED set only. On DREAMMACHINE Pi units
+the LED strip is on GPIO 12/13/16/17/22/27; GPIO 18/19/20/21 are reserved
+by the Audio+ shield's I2S bus and must never be reused, and GPIO 0/1 are
+reserved by the shield's ID EEPROM.
 
 MIN_BRIGHTNESS floor keeps the LED from ever going fully dark:
     brightness = min_brightness + value_norm * (1 - min_brightness)

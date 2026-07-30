@@ -504,8 +504,13 @@ step with the real satellite measurements.
 **GPIO LED brightness** -- [`gpio/play_satellite_envelope.py`](gpio/play_satellite_envelope.py)
 (Raspberry Pi, `gpiozero`/`PWMLED`):
 ```bash
-python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 18
+python3 play_satellite_envelope.py --csv popo_so2_envelope.csv --pin 17
 ```
+Use a pin from your board's safe LED set only. On DREAMMACHINE Pi units the
+LED strip MOSFETs are on GPIO 12/13/16/17/22/27; **GPIO 18/19/20/21 are
+reserved by the Audio+ shield's I2S bus and must never be reused**, and GPIO
+0/1 are reserved by the shield's ID EEPROM.
+
 Reads the same CSV and sets `PWMLED.value` frame-by-frame on a wall-clock
 timer, with a brightness floor (`--min-brightness`, default 10%) so the LED
 never goes fully dark between measurements. Start it at the same moment as
