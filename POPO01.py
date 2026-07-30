@@ -1118,7 +1118,8 @@ def load_mounts_xlsx(path, sat_types, sat_start=None, sat_end=None):
         values = apply_zero_mapping(sat_type, list(values))
         series[sat_type] = (list(times), values)
         print(f"[satellite] {sat_type}: {len(times)} point(s) from {os.path.basename(path)}, "
-              f"{datetime.utcfromtimestamp(times[0])} - {datetime.utcfromtimestamp(times[-1])} UTC")
+              f"{datetime.fromtimestamp(times[0], timezone.utc)} - "
+              f"{datetime.fromtimestamp(times[-1], timezone.utc)} UTC")
     if not series:
         raise SystemExit(f"No usable series loaded from {path}.")
     return series
@@ -1151,7 +1152,8 @@ def do_satellite_fetch(sat_types, target_id, time_filter, debug=False):
         values = apply_zero_mapping(sat_type, values)
         series[sat_type] = (list(times), list(values))
         print(f"[satellite] {sat_type}: {len(times)} point(s), "
-              f"{datetime.utcfromtimestamp(times[0])} - {datetime.utcfromtimestamp(times[-1])} UTC")
+              f"{datetime.fromtimestamp(times[0], timezone.utc)} - "
+              f"{datetime.fromtimestamp(times[-1], timezone.utc)} UTC")
     if not series:
         raise SystemExit("No satellite series could be fetched/parsed. Check network access "
                           "and see the [satellite] warnings above.")
@@ -1170,7 +1172,7 @@ def do_satellite_plot(series, target_id):
         ax = fig.add_subplot(gs[i, 0])
         times, values = series[sat_type]
         _, name, color, _ = SAT_TYPE_INFO[sat_type]
-        dt = [datetime.utcfromtimestamp(t) for t in times]
+        dt = [datetime.fromtimestamp(t, timezone.utc) for t in times]
         ax.plot(dt, values, color=color, marker="o", markersize=3, linewidth=1.0)
         ax.set_title(name, color="white", fontsize=10, loc="left")
         style_axes(ax)
@@ -1343,7 +1345,7 @@ def do_satellite(args):
                 parts.append(f"<{args.sat_end}")
             time_filter = ",".join(parts)
         elif args.sat_days_back:
-            start = (datetime.utcnow() - timedelta(days=args.sat_days_back)).strftime("%Y-%m-%d")
+            start = (datetime.now(timezone.utc) - timedelta(days=args.sat_days_back)).strftime("%Y-%m-%d")
             time_filter = f">{start}"
         series = do_satellite_fetch(sat_types, args.target_id, time_filter, debug=args.sat_debug)
 
