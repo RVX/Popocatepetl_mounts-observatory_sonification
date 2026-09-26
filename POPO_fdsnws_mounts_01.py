@@ -5,7 +5,13 @@ Fetches the most recent window of MX.CZB waveforms (seismic HNZ/HNN/HNE +
 infrasound HDF01-04), delayed by --delay-minutes from current UTC so the
 server's ~10-minute reindexing cycle has safely settled (default 60 min lag),
 then audifies every channel into datasets/ground/sonifications/ via POPO01's
-existing sonify pipeline (default 20x speed -> 1 hour of data = 3 min audio).
+existing sonify pipeline, at BOTH 5x and 10x speed (both sound good on the
+installation's 18" subs).
+
+After each successful run it prunes popo_live_* files older than
+--keep-days (default 5) from the mseed/sonifications folders, so a machine
+running this on a schedule never fills its disk. Cleanup only happens when
+new sonifications were just produced -- a failed fetch never deletes anything.
 
 Quick test (small window, recent past):
     python POPO_fdsnws_mounts_01.py --minutes 5
@@ -41,8 +47,12 @@ def parse_args():
     ap.add_argument("--channels", default="all", metavar="LIST",
                     help="Comma-list of channel tokens from POPO01.CHANNEL_TOKEN_MAP "
                          "(HNZ,HNN,HNE,HDF01..04), or 'all' (default)")
-    ap.add_argument("--speed-up", type=float, default=20.0,
-                    help="Audification speed multiplier (default: 20)")
+    ap.add_argument("--speed-ups", default="5,10", metavar="LIST",
+                    help="Comma-list of audification speed multipliers; one set of "
+                         "wavs is written per speed (default: 5,10)")
+    ap.add_argument("--keep-days", type=float, default=5.0,
+                    help="Delete popo_live_* mseed/wav files older than this many "
+                         "days after a successful run (default: 5)")
     ap.add_argument("--end", default=None, metavar="ISO",
                     help="Override the window end explicitly (e.g. 2026-09-16T06:00:00) "
                          "instead of now-delay; for testing against a known-good moment")
@@ -62,6 +72,26 @@ def fetch_channel(client, loc, chan, start, end):
     print(f"[fetch] {st[0].id}: {len(st)} trace(s), "
           f"{st[0].stats.starttime} - {st[-1].stats.endtime} UTC")
     return st
+
+
+def prune_old_files(keep_days):
+    """Delete popo_live_* files older than keep_days from the mseed and
+    sonifications folders. Only ever touches this script's own outputs."""
+    cutoff = datetime.now(timezone.utc).timestamp() - keep_days * 86400
+    removed = 0
+    for folder, suffix in ((POPO01.MSEED_DIR, ".mseed"), (POPO01.SONIFY_DIR, ".wav")):
+        for name in os.listdir(folder):
+            if not (name.startswith("popo_live_") and name.endswith(suffix)):
+                continue
+            path = os.path.join(folder, name)
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except OSError:
+                pass
+    if removed:
+        print(f"[cleanup] pruned {removed} file(s) older than {keep_days:g} days")
 
 
 def main():
@@ -111,9 +141,15 @@ def main():
     st.write(mseed_path, format="MSEED", encoding="STEIM2")
     print(f"[fetch] Saved merged stream to {mseed_path} ({len(st)} traces)")
 
-    wav_paths = POPO01.do_sonify(mseed_path, speed_up_factor=args.speed_up,
-                                 channel_filter="all", st=st)
-    print(f"[done] {len(wav_paths)} wav file(s) in {POPO01.SONIFY_DIR}")
+    speed_ups = [float(s.strip()) for s in args.speed_ups.split(",")]
+    wav_paths = []
+    for speed in speed_ups:
+        wav_paths += POPO01.do_sonify(mseed_path, speed_up_factor=speed,
+                                      channel_filter="all", st=st)
+    print(f"[done] {len(wav_paths)} wav file(s) in {POPO01.SONIFY_DIR} "
+          f"({len(speed_ups)} speed(s) x {len(st)} channels)")
+
+    prune_old_files(args.keep_days)
     return 0
 
 
