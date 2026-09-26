@@ -8,6 +8,10 @@ __pycache__/
 seed/*
 !seed/.gitkeep
 
+# REAPER autosave snapshots -- auto-generated every ~5 min while a project is
+# open, regenerable, not worth tracking. The main .rpp project files stay tracked.
+reaper/AutoSaves/
+
 # MOUNTS Excel export(s) -- provided scientific data, not ours to redistribute
 datasets/MOUNTS_*.xlsx
 
