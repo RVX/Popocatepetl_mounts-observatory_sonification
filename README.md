@@ -62,6 +62,7 @@ see [Output folder layout](#output-folder-layout)):
   - [A. Ground: fetch / plot / sonify / play / map](#a-ground-fetch--plot--sonify--play--map)
   - [B. Satellite: fetch / plot / sonify](#b-satellite-fetch--plot--sonify)
 - [Installation](#installation)
+- [Near-real-time ground sonification on a Raspberry Pi fleet](#near-real-time-ground-sonification-on-a-raspberry-pi-fleet)
 - [Quick start](#quick-start)
 - [Command-line reference](#command-line-reference)
 - [Recipes](#recipes)
@@ -308,6 +309,50 @@ python POPO01.py
 #    no ground data needed
 python POPO01.py satellite --play
 ```
+
+## Near-real-time ground sonification on a Raspberry Pi fleet
+
+`POPO_fdsnws_mounts_omr.py` is a **self-contained** variant for unattended
+installation machines: it fetches MX.CZB waveforms live from the MOUNTS FDSN
+web service (`https://mounts-observatory.org`) and audifies them, with no
+dependency on `POPO01.py`, no matplotlib, and no local SDS archive.
+
+Each run:
+
+1. Fetches the last `--minutes` of data (default 60) for all 7 channels —
+   seismic HNZ/HNN/HNE (loc `00`) + infrasound HDF01–04 (loc `01`–`04`) —
+   ending `--delay-minutes` (default 60) behind current UTC, a safe margin
+   over the server's ~10-minute reindexing cycle.
+2. Audifies every channel into `datasets/ground/sonifications/` at **both 5x
+   and 10x** speed (`--speed-ups 5,10`; the two speeds chosen for the
+   installation's 18" subwoofers).
+3. Prunes `popo_live_*` mseed/wav files older than `--keep-days` (default 5)
+   — only after a successful run, so a failed fetch never deletes anything.
+   Steady-state footprint: ~20 MB/hourly run → ~2.4 GB over 5 days.
+
+### Install on a Pi (Raspberry Pi OS / Debian)
+
+```bash
+sudo apt install -y python3-obspy python3-numpy python3-scipy
+mkdir -p ~/popo && cd ~/popo
+# copy POPO_fdsnws_mounts_omr.py here (scp / git clone)
+python3 POPO_fdsnws_mounts_omr.py --minutes 5   # quick test
+```
+
+### Fleet stagger
+
+`--stagger-minutes N` waits N minutes before fetching, so several Pis don't
+all query the server at the same instant. Suggested: Pi #n uses `n*10`.
+
+Hourly cron, one line per Pi (example for Pi #1):
+
+```cron
+7 * * * * cd /home/sjc/popo && /usr/bin/python3 POPO_fdsnws_mounts_omr.py --stagger-minutes 10 >> /tmp/popo_live.log 2>&1
+```
+
+Key options: `--minutes` (window length), `--delay-minutes` (lag behind real
+time), `--stagger-minutes`, `--channels all|LIST`, `--speed-ups 5,10`,
+`--keep-days 5`, `--end ISO` (test against a fixed moment).
 
 ## Command-line reference
 
